@@ -1,0 +1,19 @@
+[package]
+name = "vulkan-triangle-rust-vulkanalia"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+sdl3-sys = { version = "0.7", default-features = false, features = ["no-default-subsystems", "sdl-video"] }
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+opt-level = 3
+panic = 'abort'

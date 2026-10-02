@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# IDEA
+.idea/
+out/
+classes/
+*.iml
+
+# VS Code
+.vscode/
+
+# Cargo
+Cargo.lock
+target/
+
+# Wasm
+pkg/
