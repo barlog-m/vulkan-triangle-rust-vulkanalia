@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::ffi;
 
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk;
@@ -40,13 +39,13 @@ unsafe extern "system" fn vulkan_debug_callback(
     let message_id_name = if callback_data.message_id_name.is_null() {
         Cow::from("")
     } else {
-        unsafe { ffi::CStr::from_ptr(callback_data.message_id_name) }.to_string_lossy()
+        unsafe { std::ffi::CStr::from_ptr(callback_data.message_id_name) }.to_string_lossy()
     };
 
     let message = if callback_data.message.is_null() {
         Cow::from("")
     } else {
-        unsafe { ffi::CStr::from_ptr(callback_data.message) }.to_string_lossy()
+        unsafe { std::ffi::CStr::from_ptr(callback_data.message) }.to_string_lossy()
     };
 
     let log_level = match message_severity {

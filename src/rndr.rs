@@ -6,7 +6,6 @@ use vulkanalia::vk::{
     KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands,
 };
 use vulkanalia::Entry;
-
 use crate::mesh::Mesh;
 use crate::vk_debug::vk_enable_debug;
 use crate::vk_init_core::{vk_create_entry, vk_create_instance, vk_create_logical_device, vk_create_surface, vk_pick_physical_device};

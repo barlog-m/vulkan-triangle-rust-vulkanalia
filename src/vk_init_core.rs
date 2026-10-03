@@ -161,13 +161,13 @@ fn vk_is_physical_device_suitable(instance: &Instance, physical_device: vk::Phys
         && mesh_shader_features.mesh_shader == vk::TRUE
 }
 
-fn vk_physical_device_type_score(instance: &Instance, physical_device: &vk::PhysicalDevice) -> u32 {
+fn vk_physical_device_type_score(instance: &Instance, physical_device: &vk::PhysicalDevice) -> u8 {
     let properties = unsafe { instance.get_physical_device_properties(*physical_device) };
     match properties.device_type {
-        vk::PhysicalDeviceType::DISCRETE_GPU => 400,
-        vk::PhysicalDeviceType::INTEGRATED_GPU => 300,
-        vk::PhysicalDeviceType::VIRTUAL_GPU => 200,
-        vk::PhysicalDeviceType::CPU => 100,
+        vk::PhysicalDeviceType::DISCRETE_GPU => 4,
+        vk::PhysicalDeviceType::INTEGRATED_GPU => 3,
+        vk::PhysicalDeviceType::VIRTUAL_GPU => 2,
+        vk::PhysicalDeviceType::CPU => 1,
         _ => 0,
     }
 }
