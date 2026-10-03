@@ -6,7 +6,14 @@ edition = "2024"
 [workspace]
 
 [dependencies]
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+cgmath = "0.18"
+
 sdl3-sys = { version = "0.7", default-features = false, features = ["no-default-subsystems", "sdl-video"] }
+vulkanalia = { version = "0.35", features = ["libloading", "provisional"] }
+vulkanalia-vma = { version = "0.9" }
 
 [profile.dev.package."*"]
 opt-level = 3
