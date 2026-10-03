@@ -35,26 +35,25 @@ impl App {
     }
 
     pub fn run(&mut self) {
-        unsafe {
-            while self.is_running {
-                let mut ev = SDL_Event::default();
+        while self.is_running {
+            let mut ev = SDL_Event::default();
 
-                while SDL_PollEvent(&mut ev) {
-                    match ev.event_type() {
-                        SDL_EVENT_QUIT => {
+            while unsafe { SDL_PollEvent(&mut ev) } {
+                match ev.event_type() {
+                    SDL_EVENT_QUIT => {
+                        self.is_running = false;
+                    }
+                    SDL_EVENT_KEY_DOWN => {
+                        if unsafe { ev.key.key } == SDLK_ESCAPE {
                             self.is_running = false;
                         }
-                        SDL_EVENT_KEY_DOWN => {
-                            if ev.key.key == SDLK_ESCAPE {
-                                self.is_running = false;
-                            }
-                        }
-                        _ => {}
                     }
+                    _ => {}
                 }
-                
-                self.rndr.draw_frame(&self.mesh, &self.window);
             }
+
+            self.window.update_size();
+            self.rndr.draw_frame(&self.mesh, &self.window);
         }
     }
     

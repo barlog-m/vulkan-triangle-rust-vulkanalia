@@ -1,5 +1,5 @@
-use ash::vk;
 use glam::f32::{Vec2, Vec3};
+use vulkanalia::vk;
 
 #[derive(Debug, Default)]
 pub struct VkQueueFamilyIndices {

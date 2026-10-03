@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::ffi;
 
-use ash::ext::debug_utils;
-use ash::vk;
+use vulkanalia::prelude::v1_0::*;
+use vulkanalia::vk;
+use vulkanalia::vk::ExtDebugUtilsExtensionInstanceCommands;
 
-pub fn vk_debug_messenger_info<'a>() -> vk::DebugUtilsMessengerCreateInfoEXT<'a> {
-    vk::DebugUtilsMessengerCreateInfoEXT::default()
+pub fn vk_debug_messenger_info() -> vk::DebugUtilsMessengerCreateInfoEXTBuilder<'static> {
+    vk::DebugUtilsMessengerCreateInfoEXT::builder()
         .message_severity(
             vk::DebugUtilsMessageSeverityFlagsEXT::ERROR
                 | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
@@ -17,44 +18,35 @@ pub fn vk_debug_messenger_info<'a>() -> vk::DebugUtilsMessengerCreateInfoEXT<'a>
                 | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
                 | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
         )
-        .pfn_user_callback(Some(vulkan_debug_callback))
+        .user_callback(Some(vulkan_debug_callback))
 }
 
-pub fn vk_enable_debug(
-    entry: &ash::Entry,
-    instance: &ash::Instance,
-) -> (ash::ext::debug_utils::Instance, vk::DebugUtilsMessengerEXT) {
+pub fn vk_enable_debug(instance: &Instance) -> vk::DebugUtilsMessengerEXT {
     let debug_info = vk_debug_messenger_info();
 
-    let debug_utils_loader = debug_utils::Instance::load(&entry, &instance);
-    let debug_call_back = unsafe {
-        debug_utils_loader
-            .create_debug_utils_messenger(&debug_info, None)
-            .expect("Debug utils messenger creation error")
-    };
-
-    (debug_utils_loader, debug_call_back)
+    unsafe { instance.create_debug_utils_messenger_ext(&debug_info, None) }
+        .expect("Debug utils messenger creation error")
 }
 
 unsafe extern "system" fn vulkan_debug_callback(
     message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
     message_type: vk::DebugUtilsMessageTypeFlagsEXT,
-    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT<'_>,
-    _user_data: *mut std::os::raw::c_void,
+    p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
+    _user_data: *mut std::ffi::c_void,
 ) -> vk::Bool32 {
     let callback_data = unsafe { *p_callback_data };
     let message_id_number = callback_data.message_id_number;
 
-    let message_id_name = if callback_data.p_message_id_name.is_null() {
+    let message_id_name = if callback_data.message_id_name.is_null() {
         Cow::from("")
     } else {
-        unsafe { ffi::CStr::from_ptr(callback_data.p_message_id_name) }.to_string_lossy()
+        unsafe { ffi::CStr::from_ptr(callback_data.message_id_name) }.to_string_lossy()
     };
 
-    let message = if callback_data.p_message.is_null() {
+    let message = if callback_data.message.is_null() {
         Cow::from("")
     } else {
-        unsafe { ffi::CStr::from_ptr(callback_data.p_message) }.to_string_lossy()
+        unsafe { ffi::CStr::from_ptr(callback_data.message) }.to_string_lossy()
     };
 
     let log_level = match message_severity {

@@ -1,12 +1,15 @@
 use std::mem::ManuallyDrop;
 
-use ash::ext::debug_utils;
-use ash::khr::{surface, swapchain};
-use ash::vk;
+use vulkanalia::prelude::v1_3::*;
+use vulkanalia::vk::{
+    DeviceV1_2, DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, HasBuilder,
+    KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands,
+};
+use vulkanalia::Entry;
 
 use crate::mesh::Mesh;
 use crate::vk_debug::vk_enable_debug;
-use crate::vk_init_core::{vk_create_instance, vk_create_logical_device, vk_create_surface, vk_pick_physical_device};
+use crate::vk_init_core::{vk_create_entry, vk_create_instance, vk_create_logical_device, vk_create_surface, vk_pick_physical_device};
 use crate::vk_init_rndr::{
     vk_create_color_resources, vk_create_command_buffers, vk_create_command_pool, vk_create_depth_resources,
     vk_create_descriptor_set_layout, vk_find_depth_format, vk_create_graphics_pipeline, vk_query_swapchain_support,
@@ -19,16 +22,13 @@ use crate::window::Window;
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 pub struct Rndr {
-    _entry: ash::Entry,
-    pub instance: ash::Instance,
-    pub device: ash::Device,
-    pub allocator: ManuallyDrop<vk_mem::Allocator>,
+    _entry: Entry,
+    pub instance: Instance,
+    pub device: Device,
+    pub allocator: ManuallyDrop<vulkanalia_vma::Allocator>,
 
-    pub surface_loader: surface::Instance,
     pub surface: vk::SurfaceKHR,
 
-    #[cfg(debug_assertions)]
-    pub debug_utils_loader: debug_utils::Instance,
     #[cfg(debug_assertions)]
     pub debug_call_back: vk::DebugUtilsMessengerEXT,
 
@@ -42,7 +42,6 @@ pub struct Rndr {
     pub swapchain_surface_format: vk::SurfaceFormatKHR,
     pub swapchain_surface_extent: vk::Extent2D,
     pub swapchain_image_count: u32,
-    pub swapchain_loader: swapchain::Device,
     pub swapchain: vk::SwapchainKHR,
 
     pub swapchain_images: Vec<vk::Image>,
@@ -51,12 +50,12 @@ pub struct Rndr {
     pub color_format: vk::Format,
     pub color_image: vk::Image,
     pub color_image_view: vk::ImageView,
-    pub color_image_allocation: vk_mem::Allocation,
+    pub color_image_allocation: vulkanalia_vma::Allocation,
 
     pub depth_format: vk::Format,
     pub depth_image: vk::Image,
     pub depth_image_view: vk::ImageView,
-    pub depth_image_allocation: vk_mem::Allocation,
+    pub depth_image_allocation: vulkanalia_vma::Allocation,
 
     pub descriptor_set_layout: vk::DescriptorSetLayout,
 
@@ -82,25 +81,25 @@ pub struct Rndr {
 
 impl Rndr {
     pub fn new(window: &Window) -> Self {
-        let entry = ash::Entry::linked();
+        let entry = vk_create_entry();
         let instance = vk_create_instance(&entry);
 
         #[cfg(debug_assertions)]
-        let (debug_utils_loader, debug_call_back) = vk_enable_debug(&entry, &instance);
+        let debug_call_back = vk_enable_debug(&instance);
 
-        let (surface_loader, surface) = vk_create_surface(&entry, &instance, &window.raw());
+        let surface = vk_create_surface(&instance, &window.raw());
 
         let (physical_device, queue_family_indices, queue_family_index, msaa_samples) =
-            vk_pick_physical_device(&instance, &surface_loader, &surface);
+            vk_pick_physical_device(&instance, &surface);
 
         let (device, queue, compute_queue) =
             vk_create_logical_device(&instance, &physical_device, &queue_family_indices);
 
         let allocator = unsafe {
-            vk_mem::Allocator::new(vk_mem::AllocatorCreateInfo::new(
+            vulkanalia_vma::Allocator::new(&vulkanalia_vma::AllocatorOptions::new(
                 &instance,
                 &device,
-                physical_device.clone(),
+                physical_device,
             ))
         }
         .expect("Failed to create allocator");
@@ -111,12 +110,11 @@ impl Rndr {
         let window_height = window.height;
 
         let (swapchain_support_details, swapchain_surface_format, swapchain_surface_extent, swapchain_image_count) =
-            vk_query_swapchain_support(&physical_device, &surface, &surface_loader, window_width, window_height);
+            vk_query_swapchain_support(&physical_device, &surface, &instance, window_width, window_height);
 
         let color_format = swapchain_surface_format.format;
 
-        let (swapchain_loader, swapchain, swapchain_images) = vk_create_swap_chain(
-            &instance,
+        let (swapchain, swapchain_images) = vk_create_swap_chain(
             &device,
             &surface,
             &swapchain_support_details,
@@ -162,7 +160,7 @@ impl Rndr {
 
         vk_prepare_image_layouts(&device, &queue, &command_pool, &color_image, &depth_image);
 
-        let (present_complete_semaphores, render_finished_semaphores, timeline_semaphore) = 
+        let (present_complete_semaphores, render_finished_semaphores, timeline_semaphore) =
             vk_create_sync_objects(&device, &swapchain_images);
 
         Self {
@@ -171,11 +169,8 @@ impl Rndr {
             device,
             allocator: ManuallyDrop::new(allocator),
 
-            surface_loader,
             surface,
 
-            #[cfg(debug_assertions)]
-            debug_utils_loader,
             #[cfg(debug_assertions)]
             debug_call_back,
 
@@ -189,7 +184,6 @@ impl Rndr {
             swapchain_surface_format,
             swapchain_surface_extent,
             swapchain_image_count,
-            swapchain_loader,
             swapchain,
 
             swapchain_images,
@@ -231,13 +225,13 @@ impl Rndr {
         if window.is_zero_size() {
             return;
         }
-        
+
         let frame_index = self.frame_index;
 
         let wait_value = self.frame_number.saturating_sub(MAX_FRAMES_IN_FLIGHT as u64 - 1);
         let wait_semaphores = [self.timeline_semaphore];
         let wait_values = [wait_value];
-        let timeline_wait_info = vk::SemaphoreWaitInfo::default()
+        let timeline_wait_info = vk::SemaphoreWaitInfo::builder()
             .semaphores(&wait_semaphores)
             .values(&wait_values);
         unsafe { self.device.wait_semaphores(&timeline_wait_info, u64::MAX) }.expect("Wait timeline failed");
@@ -254,7 +248,7 @@ impl Rndr {
         let present_complete_semaphore = self.present_complete_semaphores[frame_index];
 
         let acquire_result = unsafe {
-            self.swapchain_loader.acquire_next_image(
+            self.device.acquire_next_image_khr(
                 self.swapchain,
                 u64::MAX,
                 present_complete_semaphore,
@@ -263,12 +257,12 @@ impl Rndr {
         };
 
         let (image_index, acquire_suboptimal) = match acquire_result {
-            Ok((index, suboptimal)) => (index, suboptimal),
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+            Ok((_, vk::SuccessCode::NOT_READY | vk::SuccessCode::TIMEOUT)) => return,
+            Ok((index, success_code)) => (index, success_code == vk::SuccessCode::SUBOPTIMAL_KHR),
+            Err(vk::ErrorCode::OUT_OF_DATE_KHR) => {
                 self.recreate_swapchain(window);
                 return;
             }
-            Err(vk::Result::NOT_READY | vk::Result::TIMEOUT) => return,
             Err(e) => panic!("Acquire next swapchain image failed: {}", e),
         };
 
@@ -282,25 +276,25 @@ impl Rndr {
         let signal_value = self.frame_number + 1;
 
         let wait_semaphore_infos = [
-            vk::SemaphoreSubmitInfo::default()
+            vk::SemaphoreSubmitInfo::builder()
                 .semaphore(present_complete_semaphore)
                 .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT),
-            vk::SemaphoreSubmitInfo::default()
+            vk::SemaphoreSubmitInfo::builder()
                 .semaphore(self.timeline_semaphore)
                 .value(self.frame_number)
                 .stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE),
         ];
-        let command_buffer_infos = [vk::CommandBufferSubmitInfo::default().command_buffer(command_buffer)];
+        let command_buffer_infos = [vk::CommandBufferSubmitInfo::builder().command_buffer(command_buffer)];
         let signal_semaphore_infos = [
-            vk::SemaphoreSubmitInfo::default()
+            vk::SemaphoreSubmitInfo::builder()
                 .semaphore(self.render_finished_semaphores[image_index as usize])
                 .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT),
-            vk::SemaphoreSubmitInfo::default()
+            vk::SemaphoreSubmitInfo::builder()
                 .semaphore(self.timeline_semaphore)
                 .value(signal_value)
                 .stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT),
         ];
-        let submit_info = vk::SubmitInfo2::default()
+        let submit_info = vk::SubmitInfo2::builder()
             .wait_semaphore_infos(&wait_semaphore_infos)
             .command_buffer_infos(&command_buffer_infos)
             .signal_semaphore_infos(&signal_semaphore_infos);
@@ -314,21 +308,21 @@ impl Rndr {
         let wait_semaphores = [self.render_finished_semaphores[image_index as usize]];
         let swapchains = [self.swapchain];
         let image_indices = [image_index];
-        let present_info = vk::PresentInfoKHR::default()
+        let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(&wait_semaphores)
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 
-        let present_result = unsafe { self.swapchain_loader.queue_present(self.queue, &present_info) };
+        let present_result = unsafe { self.device.queue_present_khr(self.queue, &present_info) };
 
         match present_result {
-            Ok(suboptimal) => needs_recreate |= suboptimal,
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => needs_recreate = true,
+            Ok(success_code) => needs_recreate |= success_code != vk::SuccessCode::SUCCESS,
+            Err(vk::ErrorCode::OUT_OF_DATE_KHR) => needs_recreate = true,
             Err(e) => panic!("Queue present failed: {}", e),
         }
 
         if needs_recreate {
-            self.recreate_swapchain(&window);
+            self.recreate_swapchain(window);
         }
 
         self.frame_number += 1;
@@ -341,7 +335,7 @@ impl Rndr {
                 .reset_command_buffer(command_buffer, vk::CommandBufferResetFlags::RELEASE_RESOURCES)
                 .expect("Reset command buffer failed");
 
-            let begin_info = vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+            let begin_info = vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
             self.device
                 .begin_command_buffer(command_buffer, &begin_info)
                 .expect("Begin command buffer failed");
@@ -373,7 +367,7 @@ impl Rndr {
             depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 },
         };
 
-        let color_attachment_infos = [vk::RenderingAttachmentInfo::default()
+        let color_attachment_infos = [vk::RenderingAttachmentInfo::builder()
             .image_view(self.color_image_view)
             .image_layout(vk::ImageLayout::GENERAL)
             .resolve_mode(vk::ResolveModeFlags::AVERAGE)
@@ -383,15 +377,18 @@ impl Rndr {
             .store_op(vk::AttachmentStoreOp::DONT_CARE)
             .clear_value(color_clear_value)];
 
-        let depth_attachment_info = vk::RenderingAttachmentInfo::default()
+        let depth_attachment_info = vk::RenderingAttachmentInfo::builder()
             .image_view(self.depth_image_view)
             .image_layout(vk::ImageLayout::GENERAL)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::DONT_CARE)
             .clear_value(depth_clear_value);
 
-        let rendering_info = vk::RenderingInfo::default()
-            .render_area(self.swapchain_surface_extent.into())
+        let rendering_info = vk::RenderingInfo::builder()
+            .render_area(vk::Rect2D {
+                offset: vk::Offset2D { x: 0, y: 0 },
+                extent: self.swapchain_surface_extent,
+            })
             .layer_count(1)
             .color_attachments(&color_attachment_infos)
             .depth_attachment(&depth_attachment_info);
@@ -436,7 +433,7 @@ impl Rndr {
             vk_query_swapchain_support(
                 &self.physical_device,
                 &self.surface,
-                &self.surface_loader,
+                &self.instance,
                 window_width,
                 window_height,
             );
@@ -460,8 +457,7 @@ impl Rndr {
 
         self.clean_up_swap_chain();
 
-        let (swapchain_loader, swapchain, swapchain_images) = vk_create_swap_chain(
-            &self.instance,
+        let (swapchain, swapchain_images) = vk_create_swap_chain(
             &self.device,
             &self.surface,
             &self.swapchain_support_details,
@@ -472,10 +468,9 @@ impl Rndr {
         );
 
         unsafe {
-            self.swapchain_loader.destroy_swapchain(old_swapchain, None);
+            self.device.destroy_swapchain_khr(old_swapchain, None);
         }
 
-        self.swapchain_loader = swapchain_loader;
         self.swapchain = swapchain;
         self.swapchain_images = swapchain_images;
 
@@ -488,7 +483,7 @@ impl Rndr {
                     self.device.destroy_semaphore(s, None);
                 }
             }
-            let info = vk::SemaphoreCreateInfo::default();
+            let info = vk::SemaphoreCreateInfo::builder();
             self.render_finished_semaphores = (0..self.swapchain_images.len())
                 .map(|_| unsafe { self.device.create_semaphore(&info, None) }.expect("Create semaphore failed"))
                 .collect();
@@ -529,11 +524,11 @@ impl Rndr {
         unsafe {
             self.device.destroy_image_view(self.depth_image_view, None);
             self.allocator
-                .destroy_image(self.depth_image, &mut self.depth_image_allocation);
+                .destroy_image(self.depth_image, self.depth_image_allocation);
 
             self.device.destroy_image_view(self.color_image_view, None);
             self.allocator
-                .destroy_image(self.color_image, &mut self.color_image_allocation);
+                .destroy_image(self.color_image, self.color_image_allocation);
 
             for &swapchain_image_view in &self.swapchain_image_views {
                 self.device.destroy_image_view(swapchain_image_view, None);
@@ -562,16 +557,16 @@ impl Rndr {
             self.clean_up_swap_chain();
 
             self.device.destroy_command_pool(self.command_pool, None);
-            self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+            self.device.destroy_swapchain_khr(self.swapchain, None);
 
             ManuallyDrop::drop(&mut self.allocator);
 
             self.device.destroy_device(None);
-            self.surface_loader.destroy_surface(self.surface, None);
+            self.instance.destroy_surface_khr(self.surface, None);
 
             #[cfg(debug_assertions)]
-            self.debug_utils_loader
-                .destroy_debug_utils_messenger(self.debug_call_back, None);
+            self.instance
+                .destroy_debug_utils_messenger_ext(self.debug_call_back, None);
 
             self.instance.destroy_instance(None);
         }

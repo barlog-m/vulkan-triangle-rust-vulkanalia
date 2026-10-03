@@ -1,14 +1,14 @@
-use ash::vk;
 use glam::f32::{Vec2, Vec3};
+use vulkanalia::prelude::v1_0::*;
 
 use crate::vk_models::Vertex;
 use crate::vk_utils::{vk_create_index_buffer, vk_create_vertex_buffer};
 
 pub struct Mesh {
     pub vertex_buffer: vk::Buffer,
-    vertex_buffer_alloc: vk_mem::Allocation,
+    vertex_buffer_alloc: vulkanalia_vma::Allocation,
     pub index_buffer: vk::Buffer,
-    index_buffer_alloc: vk_mem::Allocation,
+    index_buffer_alloc: vulkanalia_vma::Allocation,
 
     pub indices_count: u32,
     pub vertices_count: u32,
@@ -16,15 +16,15 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn new(
-        device: &ash::Device,
-        allocator: &vk_mem::Allocator,
+        device: &Device,
+        allocator: &vulkanalia_vma::Allocator,
         graphics_queue: &vk::Queue,
         command_pool: &vk::CommandPool,
     ) -> Self {
         let indices = [0, 1, 2, 2, 3, 0];
 
         let (index_buffer, index_buffer_alloc, indices_count) =
-            vk_create_index_buffer(&device, &allocator, graphics_queue, command_pool, &indices);
+            vk_create_index_buffer(device, allocator, graphics_queue, command_pool, &indices);
 
         let vertices = [
             Vertex {
@@ -46,7 +46,7 @@ impl Mesh {
         ];
 
         let (vertex_buffer, vertex_buffer_alloc, vertices_count) =
-            vk_create_vertex_buffer(&device, &allocator, graphics_queue, command_pool, &vertices);
+            vk_create_vertex_buffer(device, allocator, graphics_queue, command_pool, &vertices);
 
         Self {
             vertex_buffer,
@@ -58,11 +58,11 @@ impl Mesh {
         }
     }
 
-    pub fn destroy(&mut self, device: &ash::Device, allocator: &vk_mem::Allocator) {
+    pub fn destroy(&mut self, device: &Device, allocator: &vulkanalia_vma::Allocator) {
         unsafe {
             let _ = device.device_wait_idle();
-            allocator.destroy_buffer(self.vertex_buffer, &mut self.vertex_buffer_alloc);
-            allocator.destroy_buffer(self.index_buffer, &mut self.index_buffer_alloc);
+            allocator.destroy_buffer(self.vertex_buffer, self.vertex_buffer_alloc);
+            allocator.destroy_buffer(self.index_buffer, self.index_buffer_alloc);
         }
     }
 }
